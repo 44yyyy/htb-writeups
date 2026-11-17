@@ -1,4 +1,4 @@
-# HTB-Writeups
+# htb-writeups
 Welcome! This is where I will be documenting my process on HackTheBox labs as I complete them. Thank you for reading!
 
 ## Contact

